@@ -6,6 +6,7 @@
 #include "HID_Reports.h"
 #include "I2C.h"
 
+
 #define USE_DR_I2C 0 // Reads out if data is ready through I2C instead of the interrupt pin
 
 // The kit uses a Teensy 4.0 as the host, talking to two touchpads.
@@ -36,18 +37,29 @@ typedef struct
 
 GestureInfo gestureKeys[2] = {{false,0,0},{false,0,0}};
 
+enum Direction {
+
+    NONE,
+    RIGHT,
+    LEFT,
+    DOWN,
+    UP
+
+};
+
 //hard coded thresholds that will need to be validated with real data and specific to the direction of swipe
-const int RIGHT_SWIPE_MIN_X = 430; // min x delta for right swipe
-const int RIGHT_SWIPE_MAX_Y = 430;   //max y delta allowed for a right swipe */
-const int LEFT_SWIPE_MIN_X  = -430; // min x delta for a left swipe
-const int LEFT_SWIPE_MAX_Y  = 430;   // max y delta allowed for a left swipe
-const int DOWN_SWIPE_MIN_Y  = -430; // min y delta for a down swipe
-const int DOWN_SWIPE_MAX_X  = 430;   // max x delta allowed for a down swipe
-const int UP_SWIPE_MIN_Y    = 430; // min y delta for an up swipe
-const int UP_SWIPE_MAX_X    = 430;   // max x delta allowed for an up swipe
+const int RIGHT_SWIPE_MIN_DX = 430; // min x delta for right swipe
+const int RIGHT_SWIPE_MAX_ADY = 350;   //max abs y delta allowed for a right swipe */
+const int LEFT_SWIPE_MAX_DX  = -430; // max x delta for a left swipe
+const int LEFT_SWIPE_MAX_ADY  = 350;   // max abs y delta allowed for a left swipe
+const int DOWN_SWIPE_MIN_DY  = 430; // min y delta for a down swipe
+const int DOWN_SWIPE_MAX_ADX  = 350;   // max abs x delta allowed for a down swipe
+const int UP_SWIPE_MAX_DY    = -430; // min y delta for an up swipe
+const int UP_SWIPE_MAX_ADX    = 350;   // max abs x delta allowed for an up swipe
 
 void process_ptp_report(uint8_t i2c_channel, HID_report_t* report);
-
+Direction classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy);
+void send_computer_command(Direction gestureDirection, uint8_t i2c_channel);
 //TEEEEEST
 
 
@@ -55,6 +67,7 @@ void setup()
 {
   Serial.begin(115200);
   while(!Serial);
+
   
   API_Hardware_init();       //Initialize board hardware
   
@@ -586,38 +599,103 @@ if ( currentTime <= gestureKeys[i2c_channel].startTime) {
           int32_t dtime = (int32_t)currentTime - (int32_t)gestureKeys[i2c_channel].startTime;
           Serial.printf("I2C_Chan %d GESTURE ENDED at x=%u y=%u dx=%ld dy=%ld time taken = %u \n", i2c_channel, currentX, currentY, dx, dy, dtime);
         } 
-        classify_swipe_direction(i2c_channel, dx, dy);///TEST 
+        Direction gestureDirection = classify_swipe_direction(i2c_channel, dx, dy);
+        send_computer_command(gestureDirection, i2c_channel);
         gestureKeys[i2c_channel].active = false;
     }
 }
 
-void classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy)// after testing thresholds and validation gates this is where the keyboard shortcuts will be triggered from instead of printing swipe direction
+Direction classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy) //determine direction of swipe based on defined thresholds
 {
     int32_t abs_dx = abs(dx);
     int32_t abs_dy = abs(dy);
 
-    if (dx >= RIGHT_SWIPE_MIN_X && abs_dy <= RIGHT_SWIPE_MAX_Y) 
+    if (dx >= RIGHT_SWIPE_MIN_DX && abs_dy <= RIGHT_SWIPE_MAX_ADY) 
     {
-        Serial.printf("I2C_Chan %d swipe direction: RIGHT\n", i2c_channel);
-        //Keyboard.press(add desired key/shortcut here);
+        return RIGHT;
     }
 
-    else if (dx <= LEFT_SWIPE_MIN_X && abs_dy <= LEFT_SWIPE_MAX_Y) {
-        Serial.printf("I2C_Chan %d swipe direction: LEFT\n", i2c_channel);
-        //Keyboard.press(add desired key/shortcut here);
+    else if (dx <= LEFT_SWIPE_MAX_DX && abs_dy <= LEFT_SWIPE_MAX_ADY) {
+        return LEFT;
     }
 
-    else if (dy <= DOWN_SWIPE_MIN_Y && abs_dx <= DOWN_SWIPE_MAX_X) {
-        Serial.printf("I2C_Chan %d swipe direction: DOWN\n", i2c_channel);
-        //Keyboard.press(add desired key/shortcut here);
+    else if (dy >= DOWN_SWIPE_MIN_DY && abs_dx <= DOWN_SWIPE_MAX_ADX) {
+        return DOWN;
     }
 
-    else if (dy >= UP_SWIPE_MIN_Y && abs_dx <= UP_SWIPE_MAX_X){
-        Serial.printf("I2C_Chan %d swipe direction: UP\n", i2c_channel);
-        //Keyboard.press(add desired key/shortcut here);
+    else if (dy <= UP_SWIPE_MAX_DY && abs_dx <= UP_SWIPE_MAX_ADX){
+        return UP;
     }
     else {
+      return NONE;
+    }
+}
+
+
+void send_computer_command(Direction gestureDirection, uint8_t i2c_channel)
+{
+    if (gestureDirection == NONE){
       Serial.printf("I2C_Chan %d swipe direction: NONE\n", i2c_channel);
+        return;
+    }
+
+    if (i2c_channel == 0) //commands are specific to each channel/key --> this logic will have to be changed for multikey gestures to
+    {
+        if (gestureDirection == RIGHT)
+        {
+            Serial.printf("I2C_Chan %d swipe direction: RIGHT\n", i2c_channel);
+            Keyboard.press(KEY_RIGHT);
+            Keyboard.releaseAll();
+        }
+        else if (gestureDirection == LEFT)
+        {
+            Serial.printf("I2C_Chan %d swipe direction: LEFT\n", i2c_channel);
+            Keyboard.press(KEY_LEFT);
+            Keyboard.releaseAll();
+        }
+        else if (gestureDirection == UP)
+        {
+            Serial.printf("I2C_Chan %d swipe direction: UP\n", i2c_channel);
+            Keyboard.press(KEY_UP);
+            Keyboard.releaseAll();
+        }
+        else if (gestureDirection == DOWN)
+        {
+            Serial.printf("I2C_Chan %d swipe direction: DOWN\n", i2c_channel);
+            Keyboard.press(KEY_DOWN);
+            Keyboard.releaseAll();
+        }
+    }
+    else if (i2c_channel == 1)
+    {
+        if (gestureDirection == RIGHT)
+        {
+            Serial.printf("I2C_Chan %d swipe direction: RIGHT\n", i2c_channel);
+            Keyboard.press(KEY_RIGHT);
+            delay(20);
+            Keyboard.releaseAll();
+        }
+        else if (gestureDirection == LEFT)
+        {
+            Serial.printf("I2C_Chan %d swipe direction: LEFT\n", i2c_channel);
+            Keyboard.press(KEY_LEFT);
+            delay(20);
+            Keyboard.releaseAll();
+        }
+        else if (gestureDirection == UP)
+        {
+            Serial.printf("I2C_Chan %d swipe direction: UP\n", i2c_channel);
+            Keyboard.press(KEY_UP);
+            delay(20);
+            Keyboard.releaseAll();
+        }
+        else if (gestureDirection == DOWN)
+        {
+            Serial.printf("I2C_Chan %d swipe direction: DOWN\n", i2c_channel);
+            Keyboard.press(KEY_DOWN);
+            delay(20);
+            Keyboard.releaseAll();
+        }
     }
 }
 //TEEEEEST
