@@ -24,6 +24,33 @@
 bool dataPrint_mode_g = true;  /** < toggle for printing out data > */
 bool eventPrint_mode_g = true; /** < toggle for printing off events */
 
+
+//TESSTT -- struct to track whether a gesture is active and where it started
+typedef struct
+{
+    bool active;
+    uint16_t startX; 
+    uint16_t startY;
+    uint16_t startTime;
+} GestureInfo; 
+
+GestureInfo gestureKeys[2] = {{false,0,0},{false,0,0}};
+
+//hard coded thresholds that will need to be validated with real data and specific to the direction of swipe
+const int RIGHT_SWIPE_MIN_X = 430; // min x delta for right swipe
+const int RIGHT_SWIPE_MAX_Y = 430;   //max y delta allowed for a right swipe */
+const int LEFT_SWIPE_MIN_X  = -430; // min x delta for a left swipe
+const int LEFT_SWIPE_MAX_Y  = 430;   // max y delta allowed for a left swipe
+const int DOWN_SWIPE_MIN_Y  = -430; // min y delta for a down swipe
+const int DOWN_SWIPE_MAX_X  = 430;   // max x delta allowed for a down swipe
+const int UP_SWIPE_MIN_Y    = 430; // min y delta for an up swipe
+const int UP_SWIPE_MAX_X    = 430;   // max x delta allowed for an up swipe
+
+void process_ptp_report(uint8_t i2c_channel, HID_report_t* report);
+
+//TEEEEEST
+
+
 void setup()
 {
   Serial.begin(115200);
@@ -91,6 +118,7 @@ void loop()
   {
     HID_report_t report;
     API_C3_getReport(0, &report);    // read the report
+    process_ptp_report(0, &report); //TEEEEEST
     /* Interpret report from module */
     if(eventPrint_mode_g)
     {
@@ -106,6 +134,7 @@ void loop()
   {
     HID_report_t report;
     API_C3_getReport(1, &report);    // read the report
+    process_ptp_report(1, &report);
     /* Interpret report from module */
     if(eventPrint_mode_g)
     {
@@ -517,8 +546,86 @@ void printPtpReport(uint8_t i2c_channel, HID_report_t * report)
   Serial.println();
    
 }
+//TEEEEEST -- process ptp report determines the coordinates that a gesture starts and ends at and prints out the deltas
+
+void process_ptp_report(uint8_t i2c_channel, HID_report_t* report)
+{
+    uint8_t tip = report->ptp.tip; //tip = 0 when nothing is touching the sensor, can be used to help track the start and end of a gesture
+    uint16_t currentX = report->ptp.x;
+    uint16_t currentY = report->ptp.y;
+    uint16_t currentTime = report->ptp.timeStamp;
+
+    
+    if (report == NULL)
+    {
+        Serial.printf("I2C_Chan %d report is null\n", i2c_channel);
+    }
+
+    else if(report->reportID != PTP_REPORT_ID)
+    {
+        Serial.print("Not set to PTP report\n");// set PTP as only option before removing this reminder
+    }
+
+    else if (!gestureKeys[i2c_channel].active && tip == 1)
+    {
+        gestureKeys[i2c_channel].active = true;
+        gestureKeys[i2c_channel].startX = currentX;
+        gestureKeys[i2c_channel].startY = currentY;
+        gestureKeys[i2c_channel].startTime = currentTime;
+        Serial.printf("I2C_Chan %d GESTURE STARTED at x = %u y= %u\n", i2c_channel, currentX, currentY);
+    }
+    else if (gestureKeys[i2c_channel].active && tip == 0)
+    {
+        int32_t dx = (int32_t)currentX - (int32_t)gestureKeys[i2c_channel].startX;
+        int32_t dy = (int32_t)currentY - (int32_t)gestureKeys[i2c_channel].startY;
+if ( currentTime <= gestureKeys[i2c_channel].startTime) {
+          int32_t dtime = 65535 - (int32_t)gestureKeys[i2c_channel].startTime + (int32_t)currentTime; // 2^16 -1
+          Serial.printf("I2C_Chan %d GESTURE ENDED at x=%u y=%u dx=%ld dy=%ld time taken = %u \n", i2c_channel, currentX, currentY, dx, dy, dtime);
+        }
+        else {
+          int32_t dtime = (int32_t)currentTime - (int32_t)gestureKeys[i2c_channel].startTime;
+          Serial.printf("I2C_Chan %d GESTURE ENDED at x=%u y=%u dx=%ld dy=%ld time taken = %u \n", i2c_channel, currentX, currentY, dx, dy, dtime);
+        } 
+        classify_swipe_direction(i2c_channel, dx, dy);///TEST 
+        gestureKeys[i2c_channel].active = false;
+    }
+}
+
+void classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy)// after testing thresholds and validation gates this is where the keyboard shortcuts will be triggered from instead of printing swipe direction
+{
+    int32_t abs_dx = abs(dx);
+    int32_t abs_dy = abs(dy);
+
+    if (dx >= RIGHT_SWIPE_MIN_X && abs_dy <= RIGHT_SWIPE_MAX_Y) 
+    {
+        Serial.printf("I2C_Chan %d swipe direction: RIGHT\n", i2c_channel);
+        //Keyboard.press(add desired key/shortcut here);
+    }
+
+    else if (dx <= LEFT_SWIPE_MIN_X && abs_dy <= LEFT_SWIPE_MAX_Y) {
+        Serial.printf("I2C_Chan %d swipe direction: LEFT\n", i2c_channel);
+        //Keyboard.press(add desired key/shortcut here);
+    }
+
+    else if (dy <= DOWN_SWIPE_MIN_Y && abs_dx <= DOWN_SWIPE_MAX_X) {
+        Serial.printf("I2C_Chan %d swipe direction: DOWN\n", i2c_channel);
+        //Keyboard.press(add desired key/shortcut here);
+    }
+
+    else if (dy >= UP_SWIPE_MIN_Y && abs_dx <= UP_SWIPE_MAX_X){
+        Serial.printf("I2C_Chan %d swipe direction: UP\n", i2c_channel);
+        //Keyboard.press(add desired key/shortcut here);
+    }
+    else {
+      Serial.printf("I2C_Chan %d swipe direction: NONE\n", i2c_channel);
+    }
+}
+//TEEEEEST
 
 /**************************************************************/
+
+
+
 /*************** FUNCTIONS FOR PRINTING EVENTS ****************/
 
 /** @ingroup prevReports 
