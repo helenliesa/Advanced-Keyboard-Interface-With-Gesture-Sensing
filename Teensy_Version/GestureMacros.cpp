@@ -8,9 +8,10 @@ bool allow_serial_output = false;
 uint16_t macro_location[255][2]; //{macro id, eeprom id}
 
 
+//functions
+
 void initialize_from_EEPROM(){
 
-  int length = EEPROM.length();
   int pos = 0; //to keep track of where in EEPROM has been read to
   uint8_t read_8 = 0;
   uint16_t read_16 = 0;
@@ -19,12 +20,12 @@ void initialize_from_EEPROM(){
   pos += sizeof(read_8);
   for (int i = 0; i < 4; i++){
     using_trackpad[i] = (read_8 & 0x01)? true:false;
-    read_8 >> 0x01;
+    read_8 = read_8 >> 1;
   }
   allow_HID = (read_8 & 0x01)? true:false;
-  read_8 >> 0x01;
+  read_8 = read_8 >> 1;
   allow_serial_output = (read_8 & 0x01)? true:false;
-  read_8 >> 0x01;
+  read_8 = read_8 >> 0x01;
 
   bool end_loop = false;
   int i = 0;
