@@ -1,10 +1,13 @@
+#include <Arduino.h>
+#include <Keyboard.h>
+#include <EEPROM.h>
+
+
 #include "API_C3.h"         
 #include "API_Hardware.h"
 #include "API_HostBus.h"
 #include "HID_Reports.h"
 #include "I2C.h"
-#include "Keyboard.h"
-#include "EEPROM.h"
 #include "GestureMacros.h"
 
 #define USE_DR_I2C 0 // Reads out if data is ready through I2C instead of the interrupt pin
@@ -172,10 +175,10 @@ return true;
 
 void process_ptp_report(uint8_t i2c_channel, HID_report_t* report)
 {
-  if (!using_trackpad[i2c_channel]) {
+  /*if (!using_trackpad[i2c_channel]) {
     Serial.println("EEPROM set to disable channel ");
     Serial.print(i2c_channel);
-  }
+  }*/
   if (report == NULL)
   {
     Serial.print("report is null on channel ");
