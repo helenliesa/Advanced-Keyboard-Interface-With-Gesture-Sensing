@@ -119,7 +119,6 @@ void loop()
 
 //Functions
 
-
 void printPtpReport(uint8_t i2c_channel, HID_report_t * report) //print PTP report to serial
 {
   Serial.print(report->ptp.tip);
@@ -173,61 +172,61 @@ return true;
 
 void process_ptp_report(uint8_t i2c_channel, HID_report_t* report)
 {
-    if (!using_trackpad[i2c_channel]) {
-      Serial.println("EEPROM set to disable channel ");
-      Serial.print(i2c_channel);
-    }
-    if (report == NULL)
-    {
-        Serial.print("report is null on channel ");
-        Serial.println(i2c_channel);
-    }
-    if (dataPrint_mode_g)//keep on if coordinates should print to serial overtime --> for gesture visualization
-      {
-      printPtpReport(i2c_channel, report);
-      } 
+  if (!using_trackpad[i2c_channel]) {
+    Serial.println("EEPROM set to disable channel ");
+    Serial.print(i2c_channel);
+  }
+  if (report == NULL)
+  {
+    Serial.print("report is null on channel ");
+    Serial.println(i2c_channel);
+  }
+  if (dataPrint_mode_g)//keep on if coordinates should print to serial overtime --> for gesture visualization
+  {
+    printPtpReport(i2c_channel, report);
+  } 
 
-    uint8_t tip = report->ptp.tip; //tip = 0 when nothing is touching the sensor, can be used to track the start and end of a gesture
-    uint16_t currentX = report->ptp.x;
-    uint16_t currentY = report->ptp.y;
+  uint8_t tip = report->ptp.tip; //tip = 0 when nothing is touching the sensor, can be used to track the start and end of a gesture
+  uint16_t currentX = report->ptp.x;
+  uint16_t currentY = report->ptp.y;
 
-    if (!gestureKeyInfo[i2c_channel].active && tip == 1)
-    {
-        gestureKeyInfo[i2c_channel].active = true;
-        gestureKeyInfo[i2c_channel].startX = currentX;
-        gestureKeyInfo[i2c_channel].startY = currentY;
-        gestureKeyInfo[i2c_channel].startMillis = millis(); //start of gesture clock
+  if (!gestureKeyInfo[i2c_channel].active && tip == 1)
+  {
+    gestureKeyInfo[i2c_channel].active = true;
+    gestureKeyInfo[i2c_channel].startX = currentX;
+    gestureKeyInfo[i2c_channel].startY = currentY;
+    gestureKeyInfo[i2c_channel].startMillis = millis(); //start of gesture clock
 
-        Serial.print("Channel ");
-        Serial.print(i2c_channel);
-        Serial.print(" Gesture started at x = ");
-        Serial.print(currentX);
-        Serial.print(" y = ");
-        Serial.println(currentY);
-  
-    }
-    else if (gestureKeyInfo[i2c_channel].active && tip == 0)
-    {
-        int32_t dx = (int32_t)currentX - (int32_t)gestureKeyInfo[i2c_channel].startX;
-        int32_t dy = (int32_t)currentY - (int32_t)gestureKeyInfo[i2c_channel].startY;
+    Serial.print("Channel ");
+    Serial.print(i2c_channel);
+    Serial.print(" Gesture started at x = ");
+    Serial.print(currentX);
+    Serial.print(" y = ");
+    Serial.println(currentY);
 
-        uint32_t gesture_duration = millis() - gestureKeyInfo[i2c_channel].startMillis;
+  }
+  else if (gestureKeyInfo[i2c_channel].active && tip == 0)
+  {
+    int32_t dx = (int32_t)currentX - (int32_t)gestureKeyInfo[i2c_channel].startX;
+    int32_t dy = (int32_t)currentY - (int32_t)gestureKeyInfo[i2c_channel].startY;
 
-        Serial.print("Channel ");
-        Serial.print(i2c_channel);
-        Serial.print(" Gesture ended at x= ");
-        Serial.print(currentX);
-        Serial.print(" y = ");
-        Serial.print(currentY);
-        Serial.print(" dx=");
-        Serial.print(dx);
-        Serial.print(" dy=");
-        Serial.println(dy);
+    uint32_t gesture_duration = millis() - gestureKeyInfo[i2c_channel].startMillis;
 
-        Direction gestureDirection = classify_swipe_direction(i2c_channel, dx, dy, gesture_duration);
-        send_computer_command(gestureDirection, i2c_channel);
-        gestureKeyInfo[i2c_channel].active = false;
-    }
+    Serial.print("Channel ");
+    Serial.print(i2c_channel);
+    Serial.print(" Gesture ended at x= ");
+    Serial.print(currentX);
+    Serial.print(" y = ");
+    Serial.print(currentY);
+    Serial.print(" dx=");
+    Serial.print(dx);
+    Serial.print(" dy=");
+    Serial.println(dy);
+
+    Direction gestureDirection = classify_swipe_direction(i2c_channel, dx, dy, gesture_duration);
+    send_computer_command(gestureDirection, i2c_channel);
+    gestureKeyInfo[i2c_channel].active = false;
+  }
 }
 
 Direction classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, uint32_t gesture_duration) //determine direction of swipe based on defined thresholds
@@ -246,35 +245,35 @@ Direction classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, 
 
   if (dx >= RIGHT_SWIPE_MIN_DX && abs_dy <= RIGHT_SWIPE_MAX_ADY) 
   {
-      Serial.print("GESTURE,");
-      Serial.print(i2c_channel);
-      Serial.println(",RIGHT");
-      
-      return RIGHT;
+    Serial.print("GESTURE,");
+    Serial.print(i2c_channel);
+    Serial.println(",RIGHT");
+    
+    return RIGHT;
   }
 
   else if (dx <= LEFT_SWIPE_MAX_DX && abs_dy <= LEFT_SWIPE_MAX_ADY) {
-      Serial.print("GESTURE,");
-      Serial.print(i2c_channel);
-      Serial.println(",LEFT");
-              
-      return LEFT;
+    Serial.print("GESTURE,");
+    Serial.print(i2c_channel);
+    Serial.println(",LEFT");
+            
+    return LEFT;
   }
 
   else if (dy >= DOWN_SWIPE_MIN_DY && abs_dx <= DOWN_SWIPE_MAX_ADX) {
-      Serial.print("GESTURE,");
-      Serial.print(i2c_channel);
-      Serial.println(",DOWN");
-      
-      return DOWN;
+    Serial.print("GESTURE,");
+    Serial.print(i2c_channel);
+    Serial.println(",DOWN");
+    
+    return DOWN;
   }
 
   else if (dy <= UP_SWIPE_MAX_DY && abs_dx <= UP_SWIPE_MAX_ADX){
-      Serial.print("GESTURE,");
-      Serial.print(i2c_channel);
-      Serial.println(",UP");
-      
-      return UP;
+    Serial.print("GESTURE,");
+    Serial.print(i2c_channel);
+    Serial.println(",UP");
+    
+    return UP;
   }
   else {
     Serial.print("GESTURE,");
@@ -288,68 +287,65 @@ Direction classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, 
 
 void send_computer_command(Direction gestureDirection, uint8_t i2c_channel) //update with new method
 {
-    if (gestureDirection == NONE){
-        return;
-    }
+  if (gestureDirection == NONE){
+    return;
+  }
 
-    if (i2c_channel == 0) //commands are specific to each channel/key --> this logic will have to be changed for multikey gestures to
+  if (i2c_channel == 0) //commands are specific to each channel/key --> this logic will have to be changed for multikey gestures to
+  {
+    if (gestureDirection == RIGHT)
     {
-        if (gestureDirection == RIGHT)
-        {
-            Keyboard.press(KEY_RIGHT);
-            Keyboard.releaseAll();
-        }
-        else if (gestureDirection == LEFT)
-        {
-
-            Keyboard.press(KEY_LEFT);
-            Keyboard.releaseAll();
-        }
-        else if (gestureDirection == UP)
-        {
-
-            Keyboard.press(KEY_UP);
-            Keyboard.releaseAll();
-        }
-        else if (gestureDirection == DOWN)
-        {
-            Keyboard.press(KEY_DOWN);
-            Keyboard.releaseAll();
-        }
+      Keyboard.press(KEY_RIGHT);
+      Keyboard.releaseAll();
     }
-    else if (i2c_channel == 1)
+    else if (gestureDirection == LEFT)
     {
-        if (gestureDirection == RIGHT)
-        {
-            Keyboard.press(KEY_RIGHT);
-            delay(20);
-            Keyboard.releaseAll();
-        }
-        else if (gestureDirection == LEFT)
-        {
-            Keyboard.press(KEY_LEFT);
-            delay(20);
-            Keyboard.releaseAll();
-        }
-        else if (gestureDirection == UP)
-        {
-            Keyboard.press(KEY_UP);
-            delay(20);
-            Keyboard.releaseAll();
-        }
-        else if (gestureDirection == DOWN)
-        {
-            Keyboard.press(KEY_DOWN);
-            delay(20);
-            Keyboard.releaseAll();
-        }
+      Keyboard.press(KEY_LEFT);
+      Keyboard.releaseAll();
     }
+    else if (gestureDirection == UP)
+    {
+      Keyboard.press(KEY_UP);
+      Keyboard.releaseAll();
+    }
+    else if (gestureDirection == DOWN)
+    {
+      Keyboard.press(KEY_DOWN);
+      Keyboard.releaseAll();
+    }
+  }
+  else if (i2c_channel == 1)
+  {
+    if (gestureDirection == RIGHT)
+    {
+      Keyboard.press(KEY_RIGHT);
+      delay(20);
+      Keyboard.releaseAll();
+    }
+    else if (gestureDirection == LEFT)
+    {
+      Keyboard.press(KEY_LEFT);
+      delay(20);
+      Keyboard.releaseAll();
+    }
+    else if (gestureDirection == UP)
+    {
+      Keyboard.press(KEY_UP);
+      delay(20);
+      Keyboard.releaseAll();
+    }
+    else if (gestureDirection == DOWN)
+    {
+      Keyboard.press(KEY_DOWN);
+      delay(20);
+      Keyboard.releaseAll();
+    }
+  }
 }
 //TEEEEEST
 
 /**************************************************************/
-/** Prints a systemInfo_t struct to Serial.
-    See API_C3.h for more information about the systemInfo_t struct */
+
 void printSystemInfo(uint8_t channel, systemInfo_t* sysInfo)
 {
   Serial.print(F("Channel "));
