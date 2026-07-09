@@ -29,7 +29,7 @@ const uint8_t num_touchpads = 4; //number of connected touchpads/gesture keys
 GestureInfo gestureKeyInfo[num_touchpads] = {};
 
 
-enum Direction {
+/*enum Direction {
 
     NONE,
     RIGHT,
@@ -37,7 +37,15 @@ enum Direction {
     DOWN,
     UP
 
-};
+}; no longer using this*/
+
+
+const uint8_t GESTURE_NONE  = 0;
+const uint8_t GESTURE_UP    = 1;
+const uint8_t GESTURE_RIGHT = 2;
+const uint8_t GESTURE_DOWN  = 3;
+const uint8_t GESTURE_LEFT  = 4;
+const uint8_t GESTURE_TAP   = 5;
 
 //hard coded thresholds that will need to be validated with real data and specific to the direction of swipe
 const int RIGHT_SWIPE_MIN_DX = 430; // min x delta for right swipe
@@ -54,8 +62,10 @@ const uint32_t MAX_GESTURE_MS = 500;  // tune this max
 
 bool init_pad_channel(uint8_t channel);
 void process_ptp_report(uint8_t i2c_channel, HID_report_t* report);
-Direction classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, uint32_t gesture_duration);
-void send_computer_command(Direction gestureDirection, uint8_t i2c_channel);
+uint8_t classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, uint32_t gesture_duration);
+
+uint16_t compute_gesture_ID(uint8_t gestureValue, uint8_t i2c_channel);
+void send_computer_command(uint8_t gestureValue, uint8_t i2c_channel);
 
 
 void setup()
@@ -71,8 +81,8 @@ void setup()
 
   Serial.println(F("I2C initialized"));
 
-  //initialize_from_EEPROM(); //load flagsa and macro locations
-
+  initialize_from_EEPROM(); //load flagsa and macro locations
+  Keyboard.begin();
 
   //initailize all gesture key channels
   for (uint8_t i = 0; i < num_touchpads; i++) {
@@ -226,13 +236,13 @@ void process_ptp_report(uint8_t i2c_channel, HID_report_t* report)
     Serial.print(" dy=");
     Serial.println(dy);
 
-    Direction gestureDirection = classify_swipe_direction(i2c_channel, dx, dy, gesture_duration);
-    send_computer_command(gestureDirection, i2c_channel);
+   uint8_t gestureValue = classify_swipe_direction(i2c_channel, dx, dy, gesture_duration);
+    send_computer_command(gestureValue, i2c_channel);
     gestureKeyInfo[i2c_channel].active = false;
   }
 }
 
-Direction classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, uint32_t gesture_duration) //determine direction of swipe based on defined thresholds
+uint8_t classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, uint32_t gesture_duration) //determine direction of swipe based on defined thresholds
 {
   //time filters
   if (gesture_duration < MIN_GESTURE_MS || gesture_duration > MAX_GESTURE_MS) {
@@ -240,7 +250,7 @@ Direction classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, 
     Serial.print(i2c_channel);
     Serial.print(",NONE");
     Serial.println(gesture_duration);
-    return NONE;
+    return GESTURE_NONE;
   }
   
   int32_t abs_dx = abs(dx);
@@ -252,7 +262,7 @@ Direction classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, 
     Serial.print(i2c_channel);
     Serial.println(",RIGHT");
     
-    return RIGHT;
+    return GESTURE_RIGHT;
   }
 
   else if (dx <= LEFT_SWIPE_MAX_DX && abs_dy <= LEFT_SWIPE_MAX_ADY) {
@@ -260,7 +270,7 @@ Direction classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, 
     Serial.print(i2c_channel);
     Serial.println(",LEFT");
             
-    return LEFT;
+    return GESTURE_LEFT;
   }
 
   else if (dy >= DOWN_SWIPE_MIN_DY && abs_dx <= DOWN_SWIPE_MAX_ADX) {
@@ -268,7 +278,7 @@ Direction classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, 
     Serial.print(i2c_channel);
     Serial.println(",DOWN");
     
-    return DOWN;
+    return GESTURE_DOWN;
   }
 
   else if (dy <= UP_SWIPE_MAX_DY && abs_dx <= UP_SWIPE_MAX_ADX){
@@ -276,42 +286,77 @@ Direction classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, 
     Serial.print(i2c_channel);
     Serial.println(",UP");
     
-    return UP;
+    return GESTURE_UP;
   }
   else {
     Serial.print("GESTURE,");
     Serial.print(i2c_channel);
     Serial.println(",NONE");
     
-    return NONE;
+    return GESTURE_NONE;
   }
 }
 
 
-void send_computer_command(Direction gestureDirection, uint8_t i2c_channel) //update with new method
+
+
+uint16_t compute_gesture_ID(uint8_t gestureValue, uint8_t i2c_channel) {
+  uint8_t gesture_values[num_touchpads]= {0,0,0,0};
+  gesture_values[i2c_channel] = gestureValue;
+
+  uint16_t gestureID = 0;
+  uint16_t place=1;
+
+  for (uint8_t pad=0; pad< num_touchpads; pad++) {
+    
+    uint16_t term= (uint16_t)gesture_values[pad] * place;
+
+    Serial.print("pad # ");
+    Serial.print(pad);
+    Serial.print(": value= ");
+    Serial.print(gesture_values[pad]);
+    Serial.print("place");
+    Serial.print(place);
+    Serial.print("term");
+    Serial.println(term);
+
+    gestureID += term;
+    place*=6;
+  }
+  
+  Serial.print("gestureID: ");
+  Serial.println(gestureID);
+
+  return gestureID;
+
+  
+}
+
+
+/*void send_computer_command(uint8_t gestureValue, uint8_t i2c_channel) //update with new method
 {
-  if (gestureDirection == NONE){
+  if (gestureValue == GESTURE_NONE){
     return;
   }
 
   if (i2c_channel == 0) //commands are specific to each channel/key --> this logic will have to be changed for multikey gestures to
   {
-    if (gestureDirection == RIGHT)
+    if (gestureValue == GESTURE_RIGHT)
     {
       Keyboard.press(KEY_RIGHT);
       Keyboard.releaseAll();
     }
-    else if (gestureDirection == LEFT)
+    else if (gestureValue == GESTURE_LEFT)
     {
       Keyboard.press(KEY_LEFT);
       Keyboard.releaseAll();
     }
-    else if (gestureDirection == UP)
+    else if (gestureValue == GESTURE_UP)
     {
       Keyboard.press(KEY_UP);
       Keyboard.releaseAll();
     }
-    else if (gestureDirection == DOWN)
+    else if (gestureValue == GESTURE_DOWN)
     {
       Keyboard.press(KEY_DOWN);
       Keyboard.releaseAll();
@@ -319,33 +364,52 @@ void send_computer_command(Direction gestureDirection, uint8_t i2c_channel) //up
   }
   else if (i2c_channel == 1)
   {
-    if (gestureDirection == RIGHT)
+    if (gestureValue == GESTURE_RIGHT)
     {
       Keyboard.press(KEY_RIGHT);
       delay(20);
       Keyboard.releaseAll();
     }
-    else if (gestureDirection == LEFT)
+    else if (gestureValue == GESTURE_LEFT)
     {
       Keyboard.press(KEY_LEFT);
       delay(20);
       Keyboard.releaseAll();
     }
-    else if (gestureDirection == UP)
+    else if (gestureValue == GESTURE_UP)
     {
       Keyboard.press(KEY_UP);
       delay(20);
       Keyboard.releaseAll();
     }
-    else if (gestureDirection == DOWN)
+    else if (gestureValue == GESTURE_DOWN)
     {
       Keyboard.press(KEY_DOWN);
       delay(20);
       Keyboard.releaseAll();
     }
   }
+}*/
+//TEEEEEST-- old command for dual pads
+
+void send_computer_command(uint8_t gestureValue, uint8_t i2c_channel) //update with new method
+{
+  if (gestureValue == GESTURE_NONE){
+    return;
+  }
+
+  uint16_t gestureID = compute_gesture_ID(gestureValue,i2c_channel);
+
+  if (!does_macro_exist(gestureID)) {
+
+    Serial.print("No macro stored");
+    Serial.println(gestureID);
+   
+  }
+
+  run_macro(gestureID);
+  
 }
-//TEEEEEST
 
 /**************************************************************/
 
