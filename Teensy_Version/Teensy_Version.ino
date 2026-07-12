@@ -15,6 +15,55 @@
 
 bool dataPrint_mode_g = true;  /** < toggle for printing out data > */ //remove later
 
+//======================Key Matrix Setup===========================================
+
+const uint8_t num_outputs = 27;   // outputs - shift register
+const uint8_t num_inputs = 3;    // inputs- pins
+
+const uint8_t inputPins[num_inputs] = {
+14, 16, 10 
+};
+
+//shift register control pins
+const uint8_t matrix_ser   = 2;  
+const uint8_t matrix_srclk = 3;  // confirm these with schematic
+const uint8_t matrix_rclk  = 4;
+
+const uint8_t key_pressed = LOW;
+
+const uint8_t keyMap[num_outputs][num_inputs] = {
+  {0x1B,   0xC0,   0x09},
+  {0x14,   0xA0,   0xA2},
+  {0x00,   0x31,   0x51},
+  {0x41,   0x00,   0x5B},  
+  {0x70,   0x32,   0x57},  
+  {0x53,   0x5A,   0xA4},  
+  {0x71,   0x33,   0x45},
+  {0x44,   0x58,   0x00},
+  {0x72,   0x34,   0x52},
+  {0x46,   0x43,   0x00},
+  {0x73,   0x35,   0x54},
+  {0x47,   0x56,   0x00},
+  {0x74,   0x36,   0x59},
+  {0x48,   0x42,   0x20},
+  {0x75,   0x37,   0x55},
+  {0x4A,   0x4E,   0x00},
+  {0x76,   0x38,   0x49},
+  {0x4B,   0x4D,   0x00},
+  {0x77,   0x39,   0x4F},
+  {0x4C,   0xBC,   0xA5},
+  {0x78,   0x30,   0x50},
+  {0xBA,   0xBE,   0x00},
+  {0x79,   0xBD,   0xDB},
+  {0xDE,   0xBF,   0x5D},
+  {0x7A,   0xBB,   0xDD},
+  {0x0D,   0xA1,   0xA3},
+  {0x7B,   0x08,   0xDC} 
+};
+
+
+
+
 //Struct to track whether a gesture is active and where it started
 typedef struct
 {
@@ -27,6 +76,13 @@ typedef struct
 const uint8_t num_touchpads = 4; //number of connected touchpads/gesture keys
 
 GestureInfo gestureKeyInfo[num_touchpads] = {};
+
+
+uint8_t gesture_values[num_touchpads] = {0,0,0,0};
+bool multikeyGesture = false;
+uint32_t multikeyGesture_startMillis = 0;
+const uint32_t MKG_WAIT = 400; //Multikey gesture wait window (ms)
+
 
 
 /*enum Direction {
@@ -47,30 +103,33 @@ const uint8_t GESTURE_DOWN  = 3;
 const uint8_t GESTURE_LEFT  = 4;
 const uint8_t GESTURE_TAP   = 5;
 
-//hard coded thresholds that will need to be validated with real data and specific to the direction of swipe
+/*hard coded thresholds that will need to be validated with real data and specific to the direction of swipe
 const int RIGHT_SWIPE_MIN_DX = 430; // min x delta for right swipe
-const int RIGHT_SWIPE_MAX_ADY = 350;   //max abs y delta allowed for a right swipe */
+const int RIGHT_SWIPE_MAX_ADY = 350;   //max abs y delta allowed for a right swipe 
 const int LEFT_SWIPE_MAX_DX  = -430; // max x delta for a left swipe
 const int LEFT_SWIPE_MAX_ADY  = 350;   // max abs y delta allowed for a left swipe
 const int DOWN_SWIPE_MIN_DY  = 350; // min y delta for a down swipe
 const int DOWN_SWIPE_MAX_ADX  = 400;   // max abs x delta allowed for a down swipe
 const int UP_SWIPE_MAX_DY    = -350; // max y delta for an up swipe
 const int UP_SWIPE_MAX_ADX    = 400;   // max abs x delta allowed for an up swipe
+*/
+const int X_DEADZONE = 250; //none region
+const int Y_DEADZONE = 200;
 
-const uint32_t MIN_GESTURE_MS = 50;   // tune this min
-const uint32_t MAX_GESTURE_MS = 500;  // tune this max
+const uint32_t MIN_GESTURE_DURATION = 10;   // tune this min
+const uint32_t MAX_GESTURE_DURATION = 500;  // tune this max
 
 bool init_pad_channel(uint8_t channel);
 void process_ptp_report(uint8_t i2c_channel, HID_report_t* report);
 uint8_t classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, uint32_t gesture_duration);
 
-uint16_t compute_gesture_ID(uint8_t gestureValue, uint8_t i2c_channel);
+uint16_t compute_gesture_ID();
 void send_computer_command(uint8_t gestureValue, uint8_t i2c_channel);
 
 
 void setup()
 {
-  Serial.begin(115200);
+  Serial.begin(9600);
   while(!Serial);
   
   API_Hardware_init();       //Initialize board hardware
@@ -101,18 +160,10 @@ void setup()
  
 }
 
-/*
-    Wait for the Data Ready line to assert. When it does, read the data (which clears DR) and analyze the data.
-    The rest is just a user interface to change various settings.
-    */
+
 void loop()
 {
-  /* Handle incoming messages from modules */
-  #if USE_DR_I2C
-  uint8_t dr_status = API_C3_DR_Asserted_ViaI2C();
-  #else
   uint8_t dr_status = API_C3_DR_Asserted();
-  #endif
 
   if(dr_status & DR0_MASK)          // When Data is ready
   {
@@ -127,6 +178,13 @@ void loop()
     API_C3_getReport(1, &report);    // read the report
     process_ptp_report(1, &report);
   }
+
+  if ( multikeyGesture && (millis() - multikeyGesture_startMillis >= MKG_WAIT)) {
+    Serial.println("multikey gesture timed out, forced gesture classification");
+    finalize_gesture();
+  }
+
+
 }
 
 
@@ -186,7 +244,7 @@ return true;
 void process_ptp_report(uint8_t i2c_channel, HID_report_t* report)
 {
   /*if (!using_trackpad[i2c_channel]) {
-    Serial.println("EEPROM set to disable channel ");
+    Serial.println("channel disabled in EEPROM channel ");
     Serial.print(i2c_channel);
   }*/
   if (report == NULL)
@@ -235,20 +293,22 @@ void process_ptp_report(uint8_t i2c_channel, HID_report_t* report)
     Serial.print(dx);
     Serial.print(" dy=");
     Serial.println(dy);
+    
+    gestureKeyInfo[i2c_channel].active = false;
 
    uint8_t gestureValue = classify_swipe_direction(i2c_channel, dx, dy, gesture_duration);
     send_computer_command(gestureValue, i2c_channel);
-    gestureKeyInfo[i2c_channel].active = false;
   }
 }
 
 uint8_t classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, uint32_t gesture_duration) //determine direction of swipe based on defined thresholds
 {
   //time filters
-  if (gesture_duration < MIN_GESTURE_MS || gesture_duration > MAX_GESTURE_MS) {
+  if (gesture_duration < MIN_GESTURE_DURATION || gesture_duration > MAX_GESTURE_DURATION) {
     Serial.print("GESTURE,");
     Serial.print(i2c_channel);
-    Serial.print(",NONE");
+    Serial.println(",NONE");
+    Serial.print("Gesture Duration (ms): ");
     Serial.println(gesture_duration);
     return GESTURE_NONE;
   }
@@ -256,8 +316,14 @@ uint8_t classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, ui
   int32_t abs_dx = abs(dx);
   int32_t abs_dy = abs(dy);
 
-  if (dx >= RIGHT_SWIPE_MIN_DX && abs_dy <= RIGHT_SWIPE_MAX_ADY) 
-  {
+  if (abs_dx <= X_DEADZONE && abs_dy <= Y_DEADZONE){
+    Serial.print("GESTURE,");
+    Serial.print(i2c_channel);
+    Serial.println(",NONE");
+    return GESTURE_NONE;
+  }
+
+  if (dx > X_DEADZONE && abs(dx) >= abs(dy)) {
     Serial.print("GESTURE,");
     Serial.print(i2c_channel);
     Serial.println(",RIGHT");
@@ -265,7 +331,7 @@ uint8_t classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, ui
     return GESTURE_RIGHT;
   }
 
-  else if (dx <= LEFT_SWIPE_MAX_DX && abs_dy <= LEFT_SWIPE_MAX_ADY) {
+  else if (dx < -X_DEADZONE && abs(dx) >= abs(dy)) {
     Serial.print("GESTURE,");
     Serial.print(i2c_channel);
     Serial.println(",LEFT");
@@ -273,7 +339,7 @@ uint8_t classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, ui
     return GESTURE_LEFT;
   }
 
-  else if (dy >= DOWN_SWIPE_MIN_DY && abs_dx <= DOWN_SWIPE_MAX_ADX) {
+  else if (dy > Y_DEADZONE && abs(dy) > abs(dx)) {
     Serial.print("GESTURE,");
     Serial.print(i2c_channel);
     Serial.println(",DOWN");
@@ -281,7 +347,7 @@ uint8_t classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, ui
     return GESTURE_DOWN;
   }
 
-  else if (dy <= UP_SWIPE_MAX_DY && abs_dx <= UP_SWIPE_MAX_ADX){
+  else if (dy < -Y_DEADZONE && abs(dy) > abs(dx)) {
     Serial.print("GESTURE,");
     Serial.print(i2c_channel);
     Serial.println(",UP");
@@ -298,30 +364,37 @@ uint8_t classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, ui
 }
 
 
+uint8_t count_active_pads()
+{
+  uint8_t activePads = 0;
+  for (uint8_t i = 0; i < num_touchpads; i++) {
+    if (gestureKeyInfo[i].active) {
+      activePads++;
+    }
+  }
+  return activePads;
+}
 
-
-uint16_t compute_gesture_ID(uint8_t gestureValue, uint8_t i2c_channel) {
-  uint8_t gesture_values[num_touchpads]= {0,0,0,0};
-  gesture_values[i2c_channel] = gestureValue;
+uint16_t compute_gesture_ID() {
 
   uint16_t gestureID = 0;
-  uint16_t place=1;
+  uint16_t placevalue=1;
 
   for (uint8_t pad=0; pad< num_touchpads; pad++) {
     
-    uint16_t term= (uint16_t)gesture_values[pad] * place;
+    uint16_t term= (uint16_t)gesture_values[pad] * placevalue;
 
     Serial.print("pad # ");
     Serial.print(pad);
-    Serial.print(": value= ");
+    Serial.print(", value= ");
     Serial.print(gesture_values[pad]);
-    Serial.print("place");
-    Serial.print(place);
-    Serial.print("term");
+    Serial.print("placevalue: ");
+    Serial.print(placevalue);
+    Serial.print("term: ");
     Serial.println(term);
 
     gestureID += term;
-    place*=6;
+    placevalue*=6;
   }
   
   Serial.print("gestureID: ");
@@ -332,65 +405,30 @@ uint16_t compute_gesture_ID(uint8_t gestureValue, uint8_t i2c_channel) {
   
 }
 
+void finalize_gesture(){
 
-/*void send_computer_command(uint8_t gestureValue, uint8_t i2c_channel) //update with new method
-{
-  if (gestureValue == GESTURE_NONE){
-    return;
-  }
+  uint16_t gestureID = compute_gesture_ID();
+  Serial.print("final gestureID: ");
+  Serial.println(gestureID);
+ 
+  if (!does_macro_exist(gestureID)) {
 
-  if (i2c_channel == 0) //commands are specific to each channel/key --> this logic will have to be changed for multikey gestures to
-  {
-    if (gestureValue == GESTURE_RIGHT)
-    {
-      Keyboard.press(KEY_RIGHT);
-      Keyboard.releaseAll();
+    Serial.println("No macro stored");
+    Serial.print("gestureID in send_computer_command function: ");
+    Serial.println(gestureID);
+   
     }
-    else if (gestureValue == GESTURE_LEFT)
-    {
-      Keyboard.press(KEY_LEFT);
-      Keyboard.releaseAll();
+  else{
+  run_macro(gestureID);
     }
-    else if (gestureValue == GESTURE_UP)
-    {
-      Keyboard.press(KEY_UP);
-      Keyboard.releaseAll();
+  
+  for (uint8_t i=0; i<num_touchpads; i++){
+    gesture_values[i] = GESTURE_NONE;
     }
-    else if (gestureValue == GESTURE_DOWN)
-    {
-      Keyboard.press(KEY_DOWN);
-      Keyboard.releaseAll();
-    }
-  }
-  else if (i2c_channel == 1)
-  {
-    if (gestureValue == GESTURE_RIGHT)
-    {
-      Keyboard.press(KEY_RIGHT);
-      delay(20);
-      Keyboard.releaseAll();
-    }
-    else if (gestureValue == GESTURE_LEFT)
-    {
-      Keyboard.press(KEY_LEFT);
-      delay(20);
-      Keyboard.releaseAll();
-    }
-    else if (gestureValue == GESTURE_UP)
-    {
-      Keyboard.press(KEY_UP);
-      delay(20);
-      Keyboard.releaseAll();
-    }
-    else if (gestureValue == GESTURE_DOWN)
-    {
-      Keyboard.press(KEY_DOWN);
-      delay(20);
-      Keyboard.releaseAll();
-    }
-  }
-}*/
-//TEEEEEST-- old command for dual pads
+
+  multikeyGesture = false;
+
+}
 
 void send_computer_command(uint8_t gestureValue, uint8_t i2c_channel) //update with new method
 {
@@ -398,18 +436,67 @@ void send_computer_command(uint8_t gestureValue, uint8_t i2c_channel) //update w
     return;
   }
 
-  uint16_t gestureID = compute_gesture_ID(gestureValue,i2c_channel);
-
-  if (!does_macro_exist(gestureID)) {
-
-    Serial.print("No macro stored");
-    Serial.println(gestureID);
-   
+  gesture_values[i2c_channel] = gestureValue;
+if (!multikeyGesture) {
+    multikeyGesture = true;
+    multikeyGesture_startMillis = millis();
   }
 
-  run_macro(gestureID);
+  uint8_t stillActive = count_active_pads();
+
+  Serial.print("Channel ");
+  Serial.print(i2c_channel);
+  Serial.print(" lifted. Pads still active: ");
+  Serial.println(stillActive);
+
+  if (stillActive == 0) {
+    finalize_gesture();
+  }
+ 
   
 }
+
+
+
+void scan_key_matrix() {
+  for (uint8_t colNum = 0; colNum < num_outputs; colNum++) {
+    uint32_t current_column = 0;
+    current_column |= (1UL << colNum);
+
+    digitalWrite(matrix_rclk, LOW);
+    for (int8_t bitNum = 31; bitNum >= 0; bitNum--) {
+      uint8_t bitVal = (current_column & (1UL << bitNum)) ? HIGH : LOW;
+      digitalWrite(matrix_ser, bitVal);
+      digitalWrite(matrix_srclk, HIGH);
+      digitalWrite(matrix_srclk, LOW);
+    }
+    digitalWrite(matrix_rclk, HIGH);
+
+    delayMicroseconds(30);
+
+    for (uint8_t rowNum = 0; rowNum < num_inputs; rowNum++) {
+      uint8_t rowPin = inputPins[rowNum];
+      int level = digitalRead(rowPin);
+      if (level == key_pressed) {
+        uint8_t code = keyMap[rowNum][colNum];
+        if (code != 0) {
+          Keyboard.press(code);
+          Keyboard.releaseAll();
+        }
+      }
+    }
+  }
+}
+
+
+
+
+
+
+
+
+
+
 
 /**************************************************************/
 
@@ -431,75 +518,7 @@ void printSystemInfo(uint8_t channel, systemInfo_t* sysInfo)
   Serial.println(F(""));
 }
 
-void printHidDescriptor(HIDDescriptor_t * hd)
-{
-  Serial.print(F("Hid Descriptor Length: \t"));
-  Serial.println(hd->wHIDDescLength);
-  Serial.print(F("bcd Version\t\t0x"));
-  Serial.println(hd->bcdVersion, HEX);
-  Serial.print(F("Report Desc Length\t"));
-  Serial.println(hd->wReportDescLength);
-  Serial.print(F("Report Desc Register\t"));
-  Serial.println(hd->wReportDescRegister);
-  Serial.print(F("Input Register\t\t"));
-  Serial.println(hd->wInputRegister);
-  Serial.print(F("Max Input Length\t"));
-  Serial.println(hd->wMaxInputLength);
-  Serial.print(F("Output Register\t\t"));
-  Serial.println(hd->wOutputRegister);
-  Serial.print(F("Max Output Length\t"));
-  Serial.println(hd->wMaxOutputLength);
-  Serial.print(F("Command Register\t"));
-  Serial.println(hd->wCommandRegister);
-  Serial.print(F("Data Register\t\t"));
-  Serial.println(hd->wDataRegister);
-  Serial.print(F("VID\t\t0x"));
-  Serial.println(hd->wVendorID, HEX);
-  Serial.print(F("PID\t\t0x"));
-  Serial.println(hd->wProductID, HEX);
-  Serial.print(F("Version\t\t0x"));
-  Serial.println(hd->wVersionID, HEX);
-}
 
-
-
-
-void printCompMatrix(uint8_t i2c_channel)
-{
-  // This shows how to read the "compensation matrix" from the touchpad
-  uint8_t sizeX, sizeY;
-  uint16_t compNumberBytes;
-  // allocate the largest possible comp image, once you know the 
-  // comp size this could be made a smaller size (or dynamically allocated if your
-  // language supports it)
-  int16_t compImage[30 * 16]; 
-  uint16_t index;
-  // all of the sensorSize information will be fixed/consistent for a given project
-  // once you know the sizeX, sizeY, and compNumberBytes you could just hard-code
-  // all this and not bother to call this function
-  API_C3_sensorSize(i2c_channel, &sizeX, &sizeY, &compNumberBytes);
-  Serial.print(F("I2C Channel = "));
-  Serial.print(i2c_channel);
-  Serial.print(", ");
-  Serial.print(F("Sensor X,Y = "));
-  Serial.print(sizeX);
-  Serial.print(",");
-  Serial.print(sizeY);
-  Serial.print(" bytes = ");
-  Serial.println(compNumberBytes);
-  // The compImage is a 1D array (row major ordered) that can be easily broken out into a 2D array
-  API_C3_readComp(i2c_channel, compImage, compNumberBytes, 64);
-  index = 0;
-  while (index < (compNumberBytes / 2))
-  {
-    for (int x = 0; x < sizeX; x++)
-    {
-      Serial.print(compImage[index++]);
-      Serial.print(",");
-    }
-    Serial.println();
-  }
-}
 
 uint8_t i2cPing(uint8_t channel, uint8_t i2cAddr)
 {
