@@ -52,6 +52,7 @@ bool key_state[num_outputs][num_inputs] = {};
 
 void init_key_matrix();
 void scan_key_matrix();
+void scan_key_matrix_1();
 
 
 void setup()
@@ -66,10 +67,9 @@ void setup()
 void loop()
 {
   scan_key_matrix();
+  //scan_key_matrix_1();
 
 }
-
-
 
 void init_key_matrix()
 {
@@ -132,58 +132,3 @@ void scan_key_matrix()
     }
   }
 }
-
-void scan_key_matrix_1()
-{
-
-  digitalWrite(matrix_rclk, LOW);
-  for (int8_t bitNum = 31; bitNum >= 0; bitNum--) {
-    if (bitNum == colNum) {                           
-      digitalWrite(matrix_ser, HIGH);    
-      } else {
-      digitalWrite(matrix_ser, LOW); 
-      }
-    digitalWrite(matrix_srclk, HIGH); //possibly set delay after testing
-    digitalWrite(matrix_srclk, LOW);
-  }
-  digitalWrite(matrix_rclk, HIGH);
-
-  for (uint8_t colNum = 0; colNum < num_outputs; colNum++) { 
-  
-  delayMicroseconds(50);
-
-  for (uint8_t rowNum = 0; rowNum < num_inputs; rowNum++) {
-      uint8_t rowPin = inputPins[rowNum];
-      bool pressed = (digitalRead(rowPin) == key_pressed);
-
-      if (pressed && !key_state[colNum][rowNum]) {   // register if new press only (pressed now and not pressed before)
-        uint8_t code = keyMap[colNum][rowNum]; //lookup code from matrix
-        Serial.print("key press detected  col=");
-        Serial.print(colNum);
-        Serial.print(" row=");
-        Serial.print(rowNum);
-        Serial.print(" code=0x");
-        Serial.println(code, HEX);
-        if (code != 0) {
-          //Keyboard.press(code);
-        }
-      }
-      else if (!pressed && key_state[colNum][rowNum]) {   // just released key
-        uint8_t code = keyMap[colNum][rowNum];
-        if (code != 0) {
-          //Keyboard.release(code);
-        }
-      }
-
-      key_state[colNum][rowNum] = pressed;   // remember key state for next scan run
-    }
-
-    digitalWrite(matrix_rclk, LOW); 
-    digitalWrite(matrix_ser, LOW);    
-    digitalWrite(matrix_srclk, HIGH); 
-    digitalWrite(matrix_srclk, LOW);
-    digitalWrite(matrix_rclk, HIGH);
-  }
-
-}
-
