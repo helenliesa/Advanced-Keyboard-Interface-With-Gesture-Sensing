@@ -13,7 +13,7 @@ const uint8_t matrix_ser   = 7;
 const uint8_t matrix_srclk = 8;  // confirm these!!! i did
 const uint8_t matrix_rclk  = 9;
 
-const uint8_t key_pressed = HIGH;
+const uint8_t key_pressed = HIGH; //active high
 
 const uint8_t keyMap[num_outputs][num_inputs] = {
   {0x1B,   0xC0,   0x09},
@@ -65,9 +65,7 @@ void setup()
 
 void loop()
 {
-
- 
-scan_key_matrix();
+  scan_key_matrix();
 
 }
 
@@ -76,7 +74,7 @@ scan_key_matrix();
 void init_key_matrix()
 {
   for (uint8_t rowNum = 0; rowNum < num_inputs; rowNum++) {
-    pinMode(inputPins[rowNum], INPUT_PULLDOWN); // idle rows LOW
+    pinMode(inputPins[rowNum], INPUT); //
   }
 
   pinMode(matrix_ser, OUTPUT);
@@ -90,29 +88,29 @@ void init_key_matrix()
   Serial.println("key matrix initialized");
 }
 
-void scan_key_matrix() {
-  for (uint8_t colNum = 0; colNum < num_outputs; colNum++) {
-   
-    uint32_t current_column = 0;
-    current_column |= (1UL << colNum);
-
-    digitalWrite(matrix_rclk, LOW);
+void scan_key_matrix() 
+{
+  for (uint8_t colNum = 0; colNum < num_outputs; colNum++) { 
+    digitalWrite(matrix_rclk, LOW); 
     for (int8_t bitNum = 31; bitNum >= 0; bitNum--) {
-      uint8_t bitVal = (current_column & (1UL << bitNum)) ? HIGH : LOW;
-      digitalWrite(matrix_ser, bitVal);
-      digitalWrite(matrix_srclk, HIGH);
+       if (bitNum == colNum) {                           
+        digitalWrite(matrix_ser, HIGH);    
+        } else {
+        digitalWrite(matrix_ser, LOW); 
+        }
+      digitalWrite(matrix_srclk, HIGH); //possibly set delay after testing
       digitalWrite(matrix_srclk, LOW);
     }
     digitalWrite(matrix_rclk, HIGH);
 
-    delayMicroseconds(30);
+    delayMicroseconds(50); 
 
     for (uint8_t rowNum = 0; rowNum < num_inputs; rowNum++) {
       uint8_t rowPin = inputPins[rowNum];
       bool pressed = (digitalRead(rowPin) == key_pressed);
 
-      if (pressed && !key_state[colNum][rowNum]) {   // register if new press only
-        uint8_t code = keyMap[colNum][rowNum];
+      if (pressed && !key_state[colNum][rowNum]) {   // register if new press only (pressed now and not pressed before)
+        uint8_t code = keyMap[colNum][rowNum]; //lookup code from matrix
         Serial.print("key press detected  col=");
         Serial.print(colNum);
         Serial.print(" row=");
@@ -134,3 +132,58 @@ void scan_key_matrix() {
     }
   }
 }
+
+void scan_key_matrix_1()
+{
+
+  digitalWrite(matrix_rclk, LOW);
+  for (int8_t bitNum = 31; bitNum >= 0; bitNum--) {
+    if (bitNum == colNum) {                           
+      digitalWrite(matrix_ser, HIGH);    
+      } else {
+      digitalWrite(matrix_ser, LOW); 
+      }
+    digitalWrite(matrix_srclk, HIGH); //possibly set delay after testing
+    digitalWrite(matrix_srclk, LOW);
+  }
+  digitalWrite(matrix_rclk, HIGH);
+
+  for (uint8_t colNum = 0; colNum < num_outputs; colNum++) { 
+  
+  delayMicroseconds(50);
+
+  for (uint8_t rowNum = 0; rowNum < num_inputs; rowNum++) {
+      uint8_t rowPin = inputPins[rowNum];
+      bool pressed = (digitalRead(rowPin) == key_pressed);
+
+      if (pressed && !key_state[colNum][rowNum]) {   // register if new press only (pressed now and not pressed before)
+        uint8_t code = keyMap[colNum][rowNum]; //lookup code from matrix
+        Serial.print("key press detected  col=");
+        Serial.print(colNum);
+        Serial.print(" row=");
+        Serial.print(rowNum);
+        Serial.print(" code=0x");
+        Serial.println(code, HEX);
+        if (code != 0) {
+          //Keyboard.press(code);
+        }
+      }
+      else if (!pressed && key_state[colNum][rowNum]) {   // just released key
+        uint8_t code = keyMap[colNum][rowNum];
+        if (code != 0) {
+          //Keyboard.release(code);
+        }
+      }
+
+      key_state[colNum][rowNum] = pressed;   // remember key state for next scan run
+    }
+
+    digitalWrite(matrix_rclk, LOW); 
+    digitalWrite(matrix_ser, LOW);    
+    digitalWrite(matrix_srclk, HIGH); 
+    digitalWrite(matrix_srclk, LOW);
+    digitalWrite(matrix_rclk, HIGH);
+  }
+
+}
+
