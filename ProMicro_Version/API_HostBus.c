@@ -16,7 +16,7 @@
 #define HID_REPORT_TYPE_OUTPUT 2
 #define HID_REPORT_TYPE_FEATURE 3
 
-uint8_t _deviceAddress[2];
+uint8_t _deviceAddress[4];
 
 /************************************************************/
 /************************************************************/
@@ -30,6 +30,8 @@ void HB_init(int I2CFrequency_0, uint8_t I2CAddress_0, int I2CFrequency_1, uint8
   I2C_init(1, I2CFrequency_1);
   _deviceAddress[0] = I2CAddress_0;
   _deviceAddress[1] = I2CAddress_1;
+  _deviceAddress[2] = I2CAddress_0;
+  _deviceAddress[3] = I2CAddress_1;
   HostDR_init();
 }
 

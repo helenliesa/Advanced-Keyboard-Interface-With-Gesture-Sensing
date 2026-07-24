@@ -13,7 +13,8 @@ extern "C" {
 
 #define DR0_MASK (0x01)
 #define DR1_MASK (0x02)
-
+#define DR2_MASK (0x04)
+#define DR3_MASK (0x08)
 /** Required Host_DR API - The touch system requires the following Host_DR
 	functionality: */
 
