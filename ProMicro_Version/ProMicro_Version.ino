@@ -27,9 +27,9 @@ const uint8_t matrix_ser   = 7;
 const uint8_t matrix_srclk = 8;  // confirm these each mcu!!! i did
 const uint8_t matrix_rclk  = 9;
 
-const uint16_t time_delay = 10; // this is for the keypress code -ADJUSTABLE<===
-
 const uint8_t key_pressed = HIGH; //
+
+const uint16_t DEBOUNCE = 5; //ms
 
 const uint16_t keyMap[num_outputs][num_inputs] = {
   {KEY_ESC,           '`',              KEY_TAB},
@@ -64,6 +64,7 @@ const uint16_t keyMap[num_outputs][num_inputs] = {
 
 // previous pressed/not-pressed state for each key --> only register new press
 bool key_state[num_outputs][num_inputs] = {};
+uint32_t key_last[num_outputs][num_inputs] = {};
 
 
 
@@ -95,7 +96,7 @@ bool pad_connected[num_touchpads] = {};   // true for pads that initialized
 
 bool multikeyGesture = false; //this defines the start of a new wait window for checking for multigestures
 uint32_t multikeyGesture_startMillis = 0;
-const uint32_t MKG_WAIT = 200; //Multikey gesture wait window (ms) <===========TUNE THIS
+const uint32_t MKG_WAIT = 300; //Multikey gesture wait window (ms) <===========TUNE THIS
 
 
 
@@ -117,7 +118,7 @@ const int UP_SWIPE_MAX_DY    = -350; // max y delta for an up swipe
 const int UP_SWIPE_MAX_ADX    = 400;   // max abs x delta allowed for an up swipe
 */
 const int X_DEADZONE = 250; //none region ====TUNABLE
-const int Y_DEADZONE = 150; // TUNABLE <==== TUNABLE
+const int Y_DEADZONE = 200; // TUNABLE <==== TUNABLE
 
 const uint32_t MIN_GESTURE_DURATION = 5;   // tune this min
 const uint32_t MAX_GESTURE_DURATION = 700;  // tune this max
@@ -543,56 +544,58 @@ void init_key_matrix()
 
 bool scan_key_matrix() 
 {
-  bool any_key_pressed = false; 
+  bool anyKeyPressed = false; 
+  uint32_t currentMillis = millis();
 
-  for (uint8_t colNum = 0; colNum < num_outputs; colNum++) { 
-    digitalWrite(matrix_rclk, LOW); 
-    for (int8_t bitNum = 31; bitNum >= 0; bitNum--) {
-       if (bitNum == colNum) {                           
-        digitalWrite(matrix_ser, HIGH);    
-        } else {
-        digitalWrite(matrix_ser, LOW); 
-        }
-      //delayMicroseconds(time_delay);
-      digitalWrite(matrix_srclk, HIGH); //possibly set delay after testing
-      delayMicroseconds(time_delay);
-      digitalWrite(matrix_srclk, LOW);
-      //delayMicroseconds(time_delay);
+  digitalWrite(matrix_rclk, LOW);
+  for (int8_t bitNum = 31; bitNum >= 0; bitNum--) {
+    
+    //for first 31 shifts low, last one high (bitNum==0)
+    if (bitNum == 0) {                            
+      digitalWrite(matrix_ser, HIGH);    
+      } else {
+      digitalWrite(matrix_ser, LOW); 
     }
-    digitalWrite(matrix_rclk, HIGH);
-
-    delayMicroseconds(time_delay);
+    digitalWrite(matrix_srclk, HIGH);
+    digitalWrite(matrix_srclk, LOW);
+  }
+  digitalWrite(matrix_rclk, HIGH);
+ 
+  //read each column and move bit up
+  for (uint8_t colNum = 0; colNum < num_outputs; colNum++) { 
+  
+    delayMicroseconds(10); //adjust with testing
 
     for (uint8_t rowNum = 0; rowNum < num_inputs; rowNum++) {
-      uint8_t rowPin = inputPins[rowNum];
-      bool pressed = (digitalRead(rowPin) == key_pressed);
-      if (pressed) {
-        any_key_pressed = true;
-      }
+      bool pressed = (digitalRead(inputPins[rowNum]) == key_pressed);
 
-      if (pressed && !key_state[colNum][rowNum]) {   // register if new press only (pressed now and not pressed before)
+      if (pressed != key_state[colNum][rowNum] && (currentMillis - key_last[colNum][rowNum] >= DEBOUNCE)) {   // register if new press only (pressed now and not pressed before)
+        key_state[colNum][rowNum] = pressed;
+        key_last[colNum][rowNum]  = currentMillis;
+        
         uint16_t code = keyMap[colNum][rowNum]; //lookup code from matrix
-        Serial.print("key press detected  col=");
-        Serial.print(colNum);
-        Serial.print(" row=");
-        Serial.print(rowNum);
-        Serial.print(" code=0x");
-        Serial.println(code, HEX);
+        //Serial.print("key press detected  col=");
+        //Serial.print(colNum);
+        //Serial.print(" row=");
+        //Serial.print(rowNum);
+        //Serial.print(" code=0x");
+        //Serial.println(code, HEX);
         if (code != 0) {
-          Keyboard.press(code);
+          if(pressed) Keyboard.press(code);
+          else Keyboard.release(code);
         }
       }
-      else if (!pressed && key_state[colNum][rowNum]) {   // just released key
-        uint16_t code = keyMap[colNum][rowNum];
-        if (code != 0) {
-          Keyboard.release(code);
-        }
-      }
-
-      key_state[colNum][rowNum] = pressed;   // remember key state for next scan run
+      if (key_state[colNum][rowNum]) anyKeyPressed =true;
     }
+    //walk the bit
+    digitalWrite(matrix_rclk, LOW); 
+    digitalWrite(matrix_ser, LOW);    
+    digitalWrite(matrix_srclk, HIGH); //delay needed?
+    digitalWrite(matrix_srclk, LOW);
+    digitalWrite(matrix_rclk, HIGH);
   }
-  return any_key_pressed;
+
+  return anyKeyPressed;
 }
 
 
