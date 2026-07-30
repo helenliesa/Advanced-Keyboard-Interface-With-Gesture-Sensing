@@ -6,13 +6,13 @@
 #include "Project_Config.h"
 
 // ---------------- tuning ----------------
-#define I2C_DELAY        5     // half clock period
+#define I2C_DELAY          2   // half clock period
 #define I2C_NUM_CHANNELS    CONFIG_NUM_SENSORS  // one per trackpad
 #define I2C_RX_BUFFER_SIZE  64    // must be >= largest report you read in one go
 #define I2C_STRETCH_TIMEOUT 50000 // max microseconds to wait for slave clock stretching (Gen6 stretches while preparing a HID report)
 
 // ---------------- pin map ----------------
-// These come from Project_Config.h 
+//from Project_Config.h 
 static const uint8_t sdaPins[] = {CONFIG_HOST_SDA0_PIN, CONFIG_HOST_SDA1_PIN, CONFIG_HOST_SDA2_PIN, CONFIG_HOST_SDA3_PIN};
 static const uint8_t sclPins[] = {CONFIG_HOST_SCL0_PIN, CONFIG_HOST_SCL1_PIN, CONFIG_HOST_SCL2_PIN, CONFIG_HOST_SCL3_PIN};
 

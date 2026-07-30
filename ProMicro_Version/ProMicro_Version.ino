@@ -11,7 +11,10 @@
 #include "GestureMacros.h"
 
 
-bool dataPrint_mode_g = false;  /** < toggle for printing out data > */ //remove later
+bool printReportData = false;  // toggle for printing out report data each run
+
+
+uint32_t measure = 0;
 
 //======================Normal Keypress Globals===========================================
 
@@ -96,7 +99,7 @@ bool pad_connected[num_touchpads] = {};   // true for pads that initialized
 
 bool multikeyGesture = false; //this defines the start of a new wait window for checking for multigestures
 uint32_t multikeyGesture_startMillis = 0;
-const uint32_t MKG_WAIT = 300; //Multikey gesture wait window (ms) <===========TUNE THIS
+const uint32_t MKG_WAIT = 600; //Multikey gesture wait window (ms) <===========TUNE THIS
 
 
 
@@ -117,8 +120,8 @@ const int DOWN_SWIPE_MAX_ADX  = 400;   // max abs x delta allowed for a down swi
 const int UP_SWIPE_MAX_DY    = -350; // max y delta for an up swipe
 const int UP_SWIPE_MAX_ADX    = 400;   // max abs x delta allowed for an up swipe
 */
-const int X_DEADZONE = 250; //none region ====TUNABLE
-const int Y_DEADZONE = 200; // TUNABLE <==== TUNABLE
+const int DX_DEADZONE = 400; //none region --> abs dx less than this value is ignored as no gesture and sign determines direction  <====TUNABLE
+const int DY_DEADZONE = 350; // none region --> abs dy less than this value is ignored as no gesture and sign determines direction <==== TUNABLE
 
 const uint32_t MIN_GESTURE_DURATION = 5;   // tune this min
 const uint32_t MAX_GESTURE_DURATION = 700;  // tune this max
@@ -144,8 +147,14 @@ void setup()
 {
   
   Serial.begin(9600);
+  //while (!Serial)
   delay(2000);
-  Serial.println("serial up");
+  EEPROM.begin(4096);
+  //delay(3000);
+  //Serial.println("serial + eeprom up");
+
+  temp_flash_EEPROM();
+
 
   API_Hardware_init();
   Serial.println("hardware init done");
@@ -154,8 +163,18 @@ void setup()
   API_C3_init(PROJECT_I2C_FREQUENCY, ALPS_I2C_ADDR, PROJECT_I2C_FREQUENCY, ALPS_I2C_ADDR);
   Serial.println("I2C init done");
   //EEPROM.begin() //figure out storage size??
-  //initialize_from_EEPROM();
-  //Serial.println("eeprom done");
+  initialize_from_EEPROM();
+  /*for (int i = 0; i < 120; i++){
+    Serial.print("Index: ");
+    Serial.print(i);
+    Serial.print(" ID: ");
+    Serial.print(macro_location[i][0]);
+    Serial.print(" pos: ");
+    Serial.print(macro_location[i][1]);
+    Serial.println(" ");
+  }
+  */
+  Serial.println("eeprom init done");
   Keyboard.begin();
   init_key_matrix();
   Serial.println("matrix done");
@@ -171,19 +190,26 @@ void setup()
       Serial.println(" failed initialization");
     }
     else { //print system info for eahc channel
-    systemInfo_t sysInfo;
-    API_C3_readSystemInfo(i, &sysInfo);
-    printSystemInfo(i, &sysInfo);
+    Serial.println (i);
+    Serial.println ("  : gesture key initialization = success");
+    //systemInfo_t sysInfo;
+    //API_C3_readSystemInfo(i, &sysInfo);
+    //printSystemInfo(i, &sysInfo);
     }
   }
+
+
  
 }
 
-// ==========================MAIN LOOP ===================================
+// ==========================    MAIN LOOP    ===================================
+
+
 void loop()
 {
   if(scan_key_matrix()){
-    //reset all gestures
+
+    //reset all gestures if a non mod key is pressed
     for (uint8_t i = 0; i < num_touchpads; i++) {
       gestureKeyInfo[i].active = false;
       gestureKeyInfo[i].startMillis = 0;
@@ -227,7 +253,7 @@ void loop()
 
 
   if ( multikeyGesture && (millis() - multikeyGesture_startMillis >= MKG_WAIT)) {
-    Serial.println("multikey gesture timed out, forced gesture classification");
+    //Serial.println("multikey gesture timed out, forced gesture classification");
     finalize_gesture();
   }
 
@@ -308,7 +334,7 @@ void process_ptp_report(uint8_t i2c_channel, HID_report_t* report)
     Serial.println(i2c_channel);
   }
   
-  if (dataPrint_mode_g)//keep on if coordinates should print to serial overtime --> needed for gesture visualization
+  if (printReportData)//keep on if coordinates should print to serial overtime --> needed for gesture visualization
   {
     printPtpReport(i2c_channel, report);
   } 
@@ -342,19 +368,21 @@ void process_ptp_report(uint8_t i2c_channel, HID_report_t* report)
     uint32_t gesture_duration = millis() - gestureKeyInfo[i2c_channel].startMillis;
 
     //Serial.print("Channel ");
-    Serial.print(i2c_channel);
-    Serial.print(" Gesture ended at x= ");
+    //Serial.print(i2c_channel);
+    //Serial.print(" Gesture ended at x= ");
     //Serial.print(currentX);
     //Serial.print(" y = ");
     //Serial.print(currentY);
-    Serial.print(" dx=");
-    Serial.print(dx);
-    Serial.print(" dy=");
-    Serial.println(dy);
+    //Serial.print(" dx=");
+    //Serial.print(dx);
+    //Serial.print(" dy=");
+    //Serial.println(dy);
     
     gestureKeyInfo[i2c_channel].active = false;
 
     uint8_t gestureValue = classify_swipe_direction(i2c_channel, dx, dy, gesture_duration);
+    measure = micros();
+    
     send_computer_command(gestureValue, i2c_channel);
   }
 }
@@ -364,8 +392,8 @@ uint8_t classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, ui
   //time filters
   if (gesture_duration < MIN_GESTURE_DURATION || gesture_duration > MAX_GESTURE_DURATION) {
     //Serial.print("GESTURE,");
-    Serial.print(i2c_channel);
-    Serial.println(",NONE - duration");
+    //Serial.print(i2c_channel);
+    //Serial.println(",NONE - duration");
     //Serial.print("Gesture Duration (ms): ");
     //Serial.println(gesture_duration);
     return GESTURE_NONE;
@@ -374,48 +402,48 @@ uint8_t classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, ui
   int32_t abs_dx = abs(dx);
   int32_t abs_dy = abs(dy);
 
-  if (abs_dx <= X_DEADZONE && abs_dy <= Y_DEADZONE){
+  if (abs_dx <= DX_DEADZONE && abs_dy <= DY_DEADZONE){
     //Serial.print("GESTURE,");
-    Serial.print(i2c_channel);
-    Serial.println(",NONE");
+    //Serial.print(i2c_channel);
+    //Serial.println(",NONE");
     return GESTURE_NONE;
   }
 
-  if (dx > X_DEADZONE && abs(dx) >= abs(dy)) {
-    Serial.print("GESTURE,");
-    Serial.print(i2c_channel);
-    Serial.println(",RIGHT");
+  if (dx > DX_DEADZONE && abs(dx) >= abs(dy)) {
+    //Serial.print("GESTURE,");
+    //Serial.print(i2c_channel);
+    //Serial.println(",RIGHT");
     
     return GESTURE_RIGHT;
   }
 
-  else if (dx < -X_DEADZONE && abs(dx) >= abs(dy)) {
-    Serial.print("GESTURE,");
-    Serial.print(i2c_channel);
-    Serial.println(",LEFT");
+  else if (dx < -DX_DEADZONE && abs(dx) >= abs(dy)) {
+    //Serial.print("GESTURE,");
+    //Serial.print(i2c_channel);
+    //Serial.println(",LEFT");
             
     return GESTURE_LEFT;
   }
 
-  else if (dy > Y_DEADZONE && abs(dy) > abs(dx)) {
-    Serial.print("GESTURE,");
-    Serial.print(i2c_channel);
-    Serial.println(",DOWN");
+  else if (dy > DY_DEADZONE && abs(dy) > abs(dx)) {
+    //Serial.print("GESTURE,");
+    //Serial.print(i2c_channel);
+    //Serial.println(",DOWN");
     
     return GESTURE_DOWN;
   }
 
-  else if (dy < -Y_DEADZONE && abs(dy) > abs(dx)) {
-    Serial.print("GESTURE,");
-    Serial.print(i2c_channel);
-    Serial.println(",UP");
+  else if (dy < -DY_DEADZONE && abs(dy) > abs(dx)) {
+    //Serial.print("GESTURE,");
+    //Serial.print(i2c_channel);
+    //Serial.println(",UP");
     
     return GESTURE_UP;
   }
   else {
     //Serial.print("GESTURE,");
-    Serial.print(i2c_channel);
-    Serial.println(",NONE --else");
+    //Serial.print(i2c_channel);
+    //Serial.println(",NONE --else");
     
     return GESTURE_NONE;
   }
@@ -443,21 +471,21 @@ uint16_t compute_gesture_ID() {
     
     uint16_t term= (uint16_t)gesture_values[pad] * placevalue;
 
-    Serial.print("pad # ");
-    Serial.print(pad);
-    Serial.print(", value= ");
-    Serial.print(gesture_values[pad]);
-    Serial.print("placevalue: ");
-    Serial.print(placevalue);
-    Serial.print("term: ");
-    Serial.println(term);
+    //Serial.print("pad # ");
+    //Serial.print(pad);
+    //Serial.print(", value= ");
+    //Serial.println(gesture_values[pad]);
+    //Serial.print("placevalue: ");
+    //Serial.print(placevalue);
+    //Serial.print("term: ");
+    //Serial.println(term);
 
     gestureID += term;
     placevalue*=6;
   }
   
-  Serial.print("gestureID: ");
-  Serial.println(gestureID);
+  //Serial.print("gestureID: ");
+  //Serial.println(gestureID);
 
   return gestureID;
 
@@ -472,16 +500,7 @@ void finalize_gesture(){
   //Serial.print("final gestureID: ");
   //Serial.println(gestureID);
  
-  if (!does_macro_exist(gestureID)) {
-
-    //Serial.println("No macro stored");
-    //Serial.print("gestureID in send_computer_command function: ");
-    //Serial.println(gestureID);
-   
-    }
-  else{
   run_macro(gestureID);
-    }
   
   for (uint8_t i=0; i<num_touchpads; i++){
     gesture_values[i] = GESTURE_NONE;
@@ -515,6 +534,9 @@ void send_computer_command(uint8_t gestureValue, uint8_t i2c_channel) //
 
   if (stillActive == 0) {
     finalize_gesture();
+    uint32_t x = micros() - measure;
+    Serial.println(x);
+    //Serial.print("classify-> command single us: ");
   }
  
 }
@@ -545,6 +567,8 @@ void init_key_matrix()
 bool scan_key_matrix() 
 {
   bool anyKeyPressed = false; 
+
+  //bool nonModKeyPressed = false; 
   uint32_t currentMillis = millis();
 
   digitalWrite(matrix_rclk, LOW);
@@ -585,7 +609,14 @@ bool scan_key_matrix()
           else Keyboard.release(code);
         }
       }
-      if (key_state[colNum][rowNum]) anyKeyPressed =true;
+
+      if (key_state[colNum][rowNum]) anyKeyPressed = true;
+
+      //ONLY want to reset gesture info in main loop for non mod keys --> if mod key then keep gestures processing while pressed
+      //if (key_state[colNum][rowNum] && (keyMap[colNum][rowNum] < 0x80 || keyMap[colNum][rowNum] > 0x87)) { 
+        //nonModKeyPressed = true;
+      //} 
+          
     }
     //walk the bit
     digitalWrite(matrix_rclk, LOW); 
@@ -594,8 +625,9 @@ bool scan_key_matrix()
     digitalWrite(matrix_srclk, LOW);
     digitalWrite(matrix_rclk, HIGH);
   }
-
+  
   return anyKeyPressed;
+  //return nonModKeyPressed;
 }
 
 
@@ -605,7 +637,7 @@ bool scan_key_matrix()
 
 
 /**************************************************************/
-
+/*
 void printSystemInfo(uint8_t channel, systemInfo_t* sysInfo)
 {
   Serial.print(F("Channel "));
@@ -624,15 +656,15 @@ void printSystemInfo(uint8_t channel, systemInfo_t* sysInfo)
   Serial.println(F(""));
 }
 
-
+*/
 
 uint8_t i2cPing(uint8_t channel, uint8_t i2cAddr)
 {
   uint8_t error;
 
-  // The i2c_scanner uses the return value of
-  // the Write.endTransmisstion to see if
-  // a device did acknowledge being addressed.
+  //i2c_scanner uses the return value of
+  //the Write.endTransmisstion to see if
+  //a device did acknowledge being addressed.
   I2C_beginTransmission(channel, i2cAddr);
   error = I2C_endTransmission(channel, true);
 
