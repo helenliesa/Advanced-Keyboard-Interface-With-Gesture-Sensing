@@ -139,29 +139,31 @@ uint16_t compute_gesture_ID();
 void finalize_gesture();
 void send_computer_command(uint8_t gestureValue, uint8_t i2c_channel);
 
+//============================Serial Control Functions=======================================
+void check_serial();
 
 
 // =====================Set Up=========================
 
 void setup()
 {
-  
-  Serial.begin(9600);
+  Serial.ignoreFlowControl();
+  Serial.begin(115200);
   //while (!Serial)
-  delay(2000);
+  delay(200);
   EEPROM.begin(4096);
   //delay(3000);
   //Serial.println("serial + eeprom up");
 
-  temp_flash_EEPROM();
+  //temp_flash_EEPROM(); //use when assigning EEPROM values locally instead of from the PC script
 
 
   API_Hardware_init();
-  Serial.println("hardware init done");
+  //Serial.println("hardware init done");
 
   delay(2);
   API_C3_init(PROJECT_I2C_FREQUENCY, ALPS_I2C_ADDR, PROJECT_I2C_FREQUENCY, ALPS_I2C_ADDR);
-  Serial.println("I2C init done");
+  //Serial.println("I2C init done");
   //EEPROM.begin() //figure out storage size??
   initialize_from_EEPROM();
   /*for (int i = 0; i < 120; i++){
@@ -174,10 +176,10 @@ void setup()
     Serial.println(" ");
   }
   */
-  Serial.println("eeprom init done");
+  //Serial.println("eeprom init done");
   Keyboard.begin();
   init_key_matrix();
-  Serial.println("matrix done");
+  //Serial.println("matrix done");
 
   
   //initailize all gesture key channels
@@ -185,13 +187,13 @@ void setup()
     bool success = init_pad_channel(i);
     pad_connected[i] = success;
     if (!success) { //check if initialization worked
-      Serial.print("channel: ");
-      Serial.print(i);
-      Serial.println(" failed initialization");
+      //Serial.print("channel: ");
+      //Serial.print(i);
+      //Serial.println(" failed initialization");
     }
     else { //print system info for eahc channel
-    Serial.println (i);
-    Serial.println ("  : gesture key initialization = success");
+    //Serial.println (i);
+    //Serial.println ("  : gesture key initialization = success");
     //systemInfo_t sysInfo;
     //API_C3_readSystemInfo(i, &sysInfo);
     //printSystemInfo(i, &sysInfo);
@@ -207,6 +209,9 @@ void setup()
 
 void loop()
 {
+
+  check_serial(); //check for 1 character serial commands. 
+
   if(scan_key_matrix()){
 
     //reset all gestures if a non mod key is pressed
@@ -229,21 +234,21 @@ void loop()
     process_ptp_report(0, &report); //TEEEEEST
   }
   
-  if(pad_connected[1] && (dr_status & DR1_MASK))          // When Data is ready
+  if(pad_connected[1] && (dr_status & DR1_MASK))    // When Data is ready
   {
     HID_report_t report;
     API_C3_getReport(1, &report);    // read the report
     process_ptp_report(1, &report);
   }
 
-  if(pad_connected[2] && (dr_status & DR2_MASK))          // When Data is ready
+  if(pad_connected[2] && (dr_status & DR2_MASK))    // When Data is ready
   {
     HID_report_t report;
     API_C3_getReport(2, &report);    // read the report
     process_ptp_report(2, &report);
   }
 
-  if(pad_connected[3] && (dr_status & DR3_MASK))          // When Data is ready
+  if(pad_connected[3] && (dr_status & DR3_MASK))    // When Data is ready
   {
     HID_report_t report;
     API_C3_getReport(3, &report);    // read the report
@@ -687,4 +692,39 @@ uint8_t i2cPing(uint8_t channel, uint8_t i2cAddr)
   }    
 
   return error;
+}
+
+
+
+
+//============================Check for serial commands=======================================
+
+void check_serial(){
+  
+  if(Serial.available()){
+    //Serial.print("AHHHH");
+    int check = Serial.read();
+    if(check == -1) return; //stop checking if nothing was read
+
+    if(check == 'r') { // r -> begin remapping
+      read_remapping();
+      initialize_from_EEPROM();
+      Serial.end();
+      delay(500);
+      Serial.begin(9600);
+    }
+
+
+    if(check == 'd'){ // d -> output the list of macro IDs and EEPROM locations
+      for(int i = 0; i < 255; i++){
+        if(macro_location[i][0] == 0) break;
+        Serial.print("Macro : ");
+        Serial.print(i);
+        Serial.print(" , ID : ");
+        Serial.print(macro_location[i][0]);
+        Serial.print(" , Location : ");
+        Serial.println(macro_location[i][1]);
+      }
+    }
+  }
 }

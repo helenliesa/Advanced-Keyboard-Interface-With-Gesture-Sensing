@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include "GestureMacros.h"
 
 
@@ -5,7 +6,7 @@
 bool using_trackpad[4] = {false,false,false,false};
 bool allow_HID = false;
 bool allow_serial_output = false;
-uint16_t macro_location[255][2]; //{macro id, eeprom id}
+uint16_t macro_location[1296][2]; //{macro id, eeprom id}
 
 
 //functions
@@ -93,14 +94,18 @@ void run_macro(uint16_t ID){
 
   //run macro
   for(int i = 0; i<length; i++){
+    Keyboard.release(action_list[i][0]);
+    delay(1);
     Keyboard.press(action_list[i][0]);
+    delay(1);
     //Serial.print("press: ");
     //Serial.println(action_list[i][0],HEX);
-    for(int j = 0; j <= i; j++){
+    for(int j = i; j >= 0; j--){
       if(action_list[j][1] == 1){
-        Keyboard.release(action_list[i][0]);
+        Keyboard.release(action_list[j][0]);
+        delay(1);
         //Serial.print("lift: ");
-        //Serial.println(action_list[i][0],HEX);
+        //Serial.println(action_list[j][0],HEX);
       }
       action_list[j][1] -= (action_list[j][1] > 0)? 1:0;
     }
@@ -131,6 +136,68 @@ int EEPROM_WRITE_BYTE (uint8_t x, int pos){
   //Serial.print(pos);
   return pos;
 }
+
+
+void read_remapping(){
+  int pos = 0;
+  int serial_read = 0;
+  uint8_t write_8 = 0;
+  uint16_t write_16 = 0;
+
+  //initial bits
+  while (!Serial.available()){}
+  serial_read = Serial.read();
+  write_8 = serial_read;
+  EEPROM.put(pos,write_8);
+  pos += sizeof(write_8);
+  Serial.write((uint8_t)0x01);
+
+
+  //write macros
+  while(pos < EEPROM.length()){
+
+    //Serial.write(1); //request macro ID
+    while (!Serial.available());
+    serial_read = Serial.read();
+    while (!Serial.available());
+    serial_read = serial_read + (Serial.read() << 8); //read macro ID as two bytes
+
+    if(serial_read == 0) {
+      EEPROM.put(pos,(uint16_t) 0);
+      EEPROM.commit();
+      Serial.write((uint8_t)0x00);
+      return; 
+    }
+    write_16 = serial_read;
+
+
+
+
+    while (!Serial.available());
+    int length = Serial.read();
+    write_16 |= length << 11;
+    EEPROM.put(pos,write_16);
+    pos += sizeof(write_16);
+    Serial.write((uint8_t)0x01); //request macro keycode data
+    //Serial.write(length); //use only for debugging
+    for(int i = 0; i < (2*length)-1; i++){ //the length is equal to the number of keycodes, however all but the last keycode come with a second byte that primarily describes how long to hold the key
+      
+      while (!Serial.available());
+      serial_read = Serial.read();
+      write_8 = serial_read;
+      EEPROM.put(pos,write_8);
+      pos += sizeof(write_8); //sizeof should return 1, but could matter if types are changed in the future
+
+
+    }
+    EEPROM.commit();
+    Serial.write((uint8_t)0x02);
+  }
+  Serial.print("MAX EEPROM LENGTH");
+
+}
+
+
 
 
 void temp_flash_EEPROM(){
