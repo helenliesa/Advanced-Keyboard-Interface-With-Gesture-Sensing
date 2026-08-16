@@ -136,8 +136,8 @@ void printPtpReport(uint8_t i2c_channel, HID_report_t * report);
 uint8_t classify_swipe_direction(uint8_t i2c_channel, int32_t dx, int32_t dy, uint32_t gesture_duration);
 uint8_t count_active_pads();
 uint16_t compute_gesture_ID();
-void finalize_gesture();
-void send_computer_command(uint8_t gestureValue, uint8_t i2c_channel);
+void send_gesture_command();
+void get_gesture_info(uint8_t gestureValue, uint8_t i2c_channel);
 
 //============================Serial Control Functions=======================================
 void check_serial();
@@ -259,7 +259,7 @@ void loop()
 
   if ( multikeyGesture && (millis() - multikeyGesture_startMillis >= MKG_WAIT)) {
     //Serial.println("multikey gesture timed out, forced gesture classification");
-    finalize_gesture();
+    send_gesture_command();
   }
 
 
@@ -388,7 +388,7 @@ void process_ptp_report(uint8_t i2c_channel, HID_report_t* report)
     uint8_t gestureValue = classify_swipe_direction(i2c_channel, dx, dy, gesture_duration);
     measure = micros();
     
-    send_computer_command(gestureValue, i2c_channel);
+    get_gesture_info(gestureValue, i2c_channel);
   }
 }
 
@@ -499,7 +499,7 @@ uint16_t compute_gesture_ID() {
 
 
 
-void finalize_gesture(){
+void send_gesture_command(){
 
   uint16_t gestureID = compute_gesture_ID();
   //Serial.print("final gestureID: ");
@@ -517,7 +517,7 @@ void finalize_gesture(){
 
 
 
-void send_computer_command(uint8_t gestureValue, uint8_t i2c_channel) //
+void get_gesture_info(uint8_t gestureValue, uint8_t i2c_channel) //
 {
   if (gestureValue == GESTURE_NONE){
     return;
@@ -538,7 +538,7 @@ void send_computer_command(uint8_t gestureValue, uint8_t i2c_channel) //
   //Serial.println(stillActive);
 
   if (stillActive == 0) {
-    finalize_gesture();
+    send_gesture_command();
     uint32_t x = micros() - measure;
     Serial.println(x);
     //Serial.print("classify-> command single us: ");
