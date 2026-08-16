@@ -46,6 +46,8 @@ void initialize_from_EEPROM(){
         pos += sizeof(read_16);
         pos += sizeof(read_8) * (2*keys_in_macro-1);
       } else {
+        macro_location[i][0] = 0;
+        macro_location[i][1] = 0;
         end_loop = true;
         pos += sizeof(read_16);
       }
